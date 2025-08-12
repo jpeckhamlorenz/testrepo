@@ -11,3 +11,6 @@ wandb/
 *.gcode
 *.idea*
 /.idea
+*.png
+*.ply
+.DS_Store
