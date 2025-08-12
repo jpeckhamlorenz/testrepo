@@ -1,0 +1,11 @@
+archive/
+data/
+slides/
+wandb/
+.idea/*
+*.pyc
+*.pth
+.DS_Store
+*.ckpt
+*.csv
+*.gcode
