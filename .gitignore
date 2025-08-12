@@ -9,3 +9,5 @@ wandb/
 *.ckpt
 *.csv
 *.gcode
+*.idea*
+/.idea
