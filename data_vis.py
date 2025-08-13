@@ -191,6 +191,7 @@ class BeadScan:
         self.Z_flat_ransac = Z_new
 
         if visualize:
+            self._plot_raw(save_vis=save_vis)
             self._plot_ransac(save_vis=save_vis)
 
         return Z_new, R
@@ -237,7 +238,7 @@ class BeadScan:
             if self.verbose:
                 print("Flattened least squares plot saved as 'flattened_leastsquares.png'")
 
-    def plot_raw(self, save_vis=False):
+    def _plot_raw(self, save_vis=False):
         """
         Plot the raw surface.
         """
@@ -464,10 +465,12 @@ class BeadScan:
                 plt.savefig(f"profile_slice_index_{index}.png", dpi=600)
                 if self.verbose:
                     print(f"Profile slice saved as 'profile_slice_index_{index}.png'")
+                plt.close()
             else:
                 plt.savefig("profile_slice.png", dpi=600)
                 if self.verbose:
                     print("Profile slice saved as 'profile_slice.png'")
+                plt.close()
 
     def _plot_profile_search_region(self, slice_points, scan_points, index = None, save_vis=False):
         # plot the slice points on top of the scan points plot using o3d
@@ -557,7 +560,7 @@ class BeadScan:
                 plt.close()
         plt.pause(0.1)
 
-        return areas, profile_xs, profile_zs
+        return profile_xs, profile_zs, ransac_lines, areas
 
     def get_flowrates(self, areas, visualize=False, save_vis=False):
         """
@@ -644,17 +647,15 @@ if __name__ == "__main__":
     toolname = 'bead_toolpath.csv'
     scan_speed = 10.0  # mm/s
 
-    beadscan = BeadScan(folderpath, filename, toolname, scan_speed, slice_thickness_override=0.15)
-    Z_rs, R_rs = beadscan.flatten_ransac(visualize=True, save_vis=True)
-    beadscan.plot_raw(save_vis = True)
-    toolpath_aligned, toolpath_transform = beadscan.register_toolpath_to_scan(visualize=True, save_vis=True)
+    beadscan = BeadScan(folderpath, filename, toolname, scan_speed, slice_thickness_override=0.05)
+    Z_rs, R_rs = beadscan.flatten_ransac(visualize=False, save_vis=False)
+    toolpath_aligned, toolpath_transform = beadscan.register_toolpath_to_scan(visualize=False, save_vis=False)
+
     scan_points = beadscan.points_flattened
+    profile_xs, profile_zs, ground_lines, areas = beadscan.get_all_profile_areas(toolpath_aligned, scan_points,
+                                                                   visualize=False, save_vis=False)
 
-    areas, profile_xs, profile_zs = beadscan.get_all_profile_areas(toolpath_aligned, scan_points,
-                                                                   visualize=True, save_vis=True)
+    flowrates, volumes = beadscan.get_flowrates(areas, visualize=False, save_vis=False)
 
-    flowrates, volumes = beadscan.get_flowrates(areas,
-                                                visualize=True, save_vis=True)
-
-    profile_x, profile_z, ransac_line, area = beadscan.extract_profile(toolpath_aligned, scan_points,
-                                                    index=123, width=0.0, visualize=True, save_vis=True)
+    # profile_x, profile_z, ransac_line, area = beadscan.extract_profile(toolpath_aligned, scan_points,
+    #                                                 index=123, width=0.0, visualize=False, save_vis=False)
