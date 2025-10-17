@@ -16,10 +16,10 @@ plt.close('all')
 # %%
 class BeadScan:
     def __init__(self, folderpath, filename, toolname, scan_speed: float,
-                 scan_rate: float = 31250, resolution: float = 0.02, max_bead_width: float = 3.0,
-                 slice_thickness_override = None, datatrim = (60, 550), verbose_prints = False):
+                 scan_rate: float = 100, resolution: float = 0.02, max_bead_width: float = 3.0,
+                 slice_thickness_override = None, datatrim = (0, 800), verbose_prints = False):
         # Parameters
-        ##############################
+        ############################## typ: datatrim = (60, 550) for 11.1 mm/s scan speed
         ##############################
         self._folderpath = folderpath  # Path to the folder containing the data file
         self._filename = filename  # Name of the data file
@@ -68,17 +68,31 @@ class BeadScan:
     def _clean_data(self, data):
         """
         Clean the data by replacing -99999.9999 with 0.0.
+        Turn data from unsigned 16-bit to signed by subtracting 32768.
+        Convert from raw units to microns by dividing by 100
+        Convert from microns to mm by dividing by 1000
         """
-        clean_data = np.where(data == -99999.9999, 0.0, data)
+        # clean_data = np.where(data == -99999.9999, np.nan, data)
+        clean_data = np.where(data < 10, np.nan, data)
+        signed_data = clean_data - 32768.0
+        data_microns = signed_data / 100.0
+        data_mm = clean_data / 1000.0
 
-        return clean_data
+
+        return data_mm
 
     def _trim_data(self, leftslice=60, rightslice=550):
         """
         Trim the data by slicing the array.
         """
 
-        return self.data_clean[:, rightslice:-leftslice]
+        # return self.data_clean[:, rightslice:-leftslice]
+        # return self.data_clean[:, leftslice:rightslice]
+        #todo: address if i need to do trimming at all later on
+
+
+
+        return self.data_clean
 
     def _create_raster(self):
         """
@@ -98,8 +112,7 @@ class BeadScan:
         Convert the data to a point cloud format.
         """
         points = np.column_stack((self.X.ravel(), self.Y.ravel(), self.Z.ravel()))
-        valid = self.Z.ravel() > -1e5
-        # points_valid = points[valid]
+        valid = self.Z.ravel() > -10
 
         return points, valid
 
@@ -188,15 +201,26 @@ class BeadScan:
         Z_new_flat = np.full_like(self.Z.ravel(), np.nan)
         Z_new_flat[valid] = rotated_points[valid, 2]
         Z_new = Z_new_flat.reshape(self.Z.shape)
+
+
+
+        #todo: change this later, James Lorenz
+
+        # change all nans in Z_new to the minimum value of Z_new
+        Z_new = np.nan_to_num(Z_new, nan=np.nanmin(Z_new))
+
+
+
+
         self.Z_flat_ransac = Z_new
 
         if visualize:
             self._plot_raw(save_vis=save_vis)
-            self._plot_ransac(save_vis=save_vis)
+            self._plot_ransac(save_vis=save_vis, show_ticks=False)
 
         return Z_new, R
 
-    def _plot_ransac(self, save_vis=False):
+    def _plot_ransac(self, save_vis=False, show_ticks=False):
         """
         Plot the flattened surface.
         """
@@ -204,9 +228,11 @@ class BeadScan:
         ax = fig.add_subplot(111, projection='3d')
         ax.plot_surface(self.X_flat_ransac, self.Y_flat_ransac, self.Z_flat_ransac, cmap=cm.viridis)
         ax.set_title("Flattened Ransac")
-        ax.set(xticklabels=[],
-               yticklabels=[],
-               zticklabels=[])
+
+        if not show_ticks:
+            ax.set(xticklabels=[],
+                   yticklabels=[],
+                   zticklabels=[])
         ax.set_aspect('equal')
         # plt.axis('off')
         # plt.grid(b=None)
@@ -259,7 +285,7 @@ class BeadScan:
             if self.verbose:
                 print("Raw surface plot saved as 'raw_surface.png'")
 
-    def register_toolpath_to_scan(self, threshold=1.0, visualize=True, save_vis=False):
+    def register_toolpath_to_scan(self, threshold=10, visualize=True, save_vis=False):
         """
         Registers a 3D toolpath to scanned surface points using ICP.
 
@@ -280,12 +306,13 @@ class BeadScan:
                 Estimated transformation matrix from ICP.
         """
 
-        # Convert to Open3D point clouds
+
+
         pcd_toolpath = o3d.geometry.PointCloud()
         pcd_toolpath.points = o3d.utility.Vector3dVector(self.toolpath)
 
         pcd_scan = o3d.geometry.PointCloud()
-        pcd_scan.points = o3d.utility.Vector3dVector(self.points)
+        pcd_scan.points = o3d.utility.Vector3dVector(self.points_flattened[self.valid_mask])  # Use only XYZ coordinates
 
         # Initial transform = identity
         init_transform = np.eye(4)
@@ -304,21 +331,47 @@ class BeadScan:
             if self.verbose:
                 print("ICP fitness:", reg_result.fitness)
                 print("Transformation matrix:\n", reg_result.transformation)
+                # Convert to Open3D point clouds
 
-            pcd_scan.paint_uniform_color([0.6, 0.6, 0.6])  # Green: scan
+            pcd_original = o3d.geometry.PointCloud()
+            pcd_original.points = o3d.utility.Vector3dVector(self.toolpath)
+
+            base_threshold = 0.25  # mm
+
+            pcd_scan_base = o3d.geometry.PointCloud()
+            pcd_scan_base.points = o3d.utility.Vector3dVector(
+                self.points_flattened[self.valid_mask][self.points_flattened[self.valid_mask][:,2] < base_threshold])
+
+            pcd_scan_bead = o3d.geometry.PointCloud()
+            pcd_scan_bead.points = o3d.utility.Vector3dVector(
+                self.points_flattened[self.valid_mask][self.points_flattened[self.valid_mask][:, 2] >= base_threshold])
+
+
+            # pcd_scan.paint_uniform_color([0.6, 0.6, 0.6])  # Green: scan
+            pcd_scan_base.paint_uniform_color([0.6, 0.6, 0.6])  # Dark gray: base
+            pcd_scan_bead.paint_uniform_color([0.2, 0.2, 0.2])  # Green: bead
             pcd_toolpath.paint_uniform_color([1, 0, 0])  # Red: toolpath (aligned)
-            # o3d.visualization.draw_geometries([pcd_toolpath, pcd_scan])
+            pcd_original.paint_uniform_color([0, 0, 1])  # Blue: original toolpath (optional)
+
+
+            # o3d.visualization.draw_geometries([pcd_scan_base, pcd_scan_bead, pcd_toolpath, pcd_original])
 
             vis = o3d.visualization.Visualizer()
             vis.create_window(visible=True)  # Set visible=False for headless rendering if needed
 
             # 3. Add the point cloud to the visualizer
-            vis.add_geometry(pcd_scan)
+            # vis.add_geometry(pcd_scan)
+            vis.add_geometry(pcd_scan_base)
+            vis.add_geometry(pcd_scan_bead)
             vis.add_geometry(pcd_toolpath)
+            vis.add_geometry(pcd_original)  # Optional: original toolpath for comparison
 
             # 4. Update the visualizer to render the scene
-            vis.update_geometry(pcd_scan)
+            # vis.update_geometry(pcd_scan)
+            vis.update_geometry(pcd_scan_base)
+            vis.update_geometry(pcd_scan_bead)
             vis.update_geometry(pcd_toolpath)
+            vis.update_geometry(pcd_original)
 
             vis.poll_events()
             vis.update_renderer()
@@ -368,7 +421,7 @@ class BeadScan:
         if resolution <= 0:
             resolution = self.resolution  # Use default resolution if not specified
         if width <= 0:
-            width = self.max_bead_width * 1.5 # Use default width if not specified
+            width = self.max_bead_width * 2.0 # Use default width if not specified
 
         pt = toolpath_points[index]
         if index < len(toolpath_points) - 1:
@@ -429,7 +482,11 @@ class BeadScan:
                 print(len(profile_x), "points in profile")
                 print(f"Computed area: {area:.3f} mm^2")
             self._plot_profile_area(profile_x, profile_z, index=index, ransac_line=line_y, save_vis=save_vis)
-            self._plot_profile_search_region(slice_points, scan_points, index = index, save_vis=save_vis)
+            if save_vis:
+                self._plot_profile_search_region(slice_points, scan_points, index = index, save_vis=save_vis)
+            else:
+                plt.pause(0.1)
+                # plt.close()
 
         return profile_x, profile_z, line_y, area
 
@@ -465,11 +522,13 @@ class BeadScan:
                 plt.savefig(f"profile_slice_index_{index}.png", dpi=600)
                 if self.verbose:
                     print(f"Profile slice saved as 'profile_slice_index_{index}.png'")
+                plt.pause(0.1)
                 plt.close()
             else:
                 plt.savefig("profile_slice.png", dpi=600)
                 if self.verbose:
                     print("Profile slice saved as 'profile_slice.png'")
+                plt.pause(0.1)
                 plt.close()
 
     def _plot_profile_search_region(self, slice_points, scan_points, index = None, save_vis=False):
@@ -482,15 +541,32 @@ class BeadScan:
         pcd_scan.paint_uniform_color([0.6, 0.6, 0.6])
         # o3d.visualization.draw_geometries([pcd_scan, pcd_slice])
 
+        base_threshold = 0.25  # mm, threshold to separate base and bead
+
+        pcd_scan_base = o3d.geometry.PointCloud()
+        pcd_scan_base.points = o3d.utility.Vector3dVector(
+            self.points_flattened[self.valid_mask][self.points_flattened[self.valid_mask][:, 2] < base_threshold])
+
+        pcd_scan_bead = o3d.geometry.PointCloud()
+        pcd_scan_bead.points = o3d.utility.Vector3dVector(
+            self.points_flattened[self.valid_mask][self.points_flattened[self.valid_mask][:, 2] >= base_threshold])
+
+        pcd_scan_base.paint_uniform_color([0.6, 0.6, 0.6])  # Dark gray: base
+        pcd_scan_bead.paint_uniform_color([0.2, 0.2, 0.2])  # Green: bead
+
         vis = o3d.visualization.Visualizer()
         vis.create_window(visible=True)  # Set visible=False for headless rendering if needed
 
         # 3. Add the point cloud to the visualizer
-        vis.add_geometry(pcd_scan)
+        # vis.add_geometry(pcd_scan)
+        vis.add_geometry(pcd_scan_base)
+        vis.add_geometry(pcd_scan_bead)
         vis.add_geometry(pcd_slice)
 
         # 4. Update the visualizer to render the scene
-        vis.update_geometry(pcd_scan)
+        # vis.update_geometry(pcd_scan)
+        vis.update_geometry(pcd_scan_base)
+        vis.update_geometry(pcd_scan_bead)
         vis.update_geometry(pcd_slice)
 
         vis.poll_events()
@@ -503,7 +579,7 @@ class BeadScan:
                 vis.destroy_window()
 
                 if self.verbose:
-                    print(f"Slice region saved as 'slice_region_index_{index}.ply'")
+                    print(f"Slice region saved as 'slice_region_index_{index}.png'")
             else:
                 # o3d.io.write_point_cloud("slice_region.ply", pcd_slice)
                 vis.capture_screen_image("slice_region.png", do_render=True)
@@ -513,7 +589,7 @@ class BeadScan:
                     print("Slice region saved as 'slice_region.ply'")
 
     def get_all_profile_areas(self, toolpath_points, scan_points,
-                              width=0.0, resolution=0.0, visualize=False, save_vis=False):
+                              width=0.0, resolution=0.0, index_override = [0,0], visualize=False, save_vis=False):
         """
         Compute the area under the profile curve for each toolpath index.
 
@@ -539,26 +615,34 @@ class BeadScan:
         ransac_lines = []
         areas = []
 
-        for i in tqdm(range(len(toolpath_points)), desc="Extracting profiles"):
+        if index_override[0] == 0 and index_override[1] == 0:
+            # If no index override, use all indices
+            indices = range(len(toolpath_points))
+        else:
+            # If index override is provided, use the specified range
+            indices = range(index_override[0], index_override[1])
+
+        for i in tqdm(indices, desc="Extracting profiles"):
             px, pz, rl, a = beadscan.extract_profile(toolpath_points, scan_points, index=i,
-                                                     visualize=True, save_vis=save_vis)
+                                                     visualize=visualize, save_vis=save_vis)
             profile_xs.append(px)
             profile_zs.append(pz)
             ransac_lines.append(rl)
             areas.append(a)
 
-        if visualize:
-            for i in range(len(toolpath_points)):
-                px = profile_xs[i]
-                pz = profile_zs[i]
-                rl = ransac_lines[i]
-                if px is None or pz is None:
-                    print(f"No profile found for toolpath index {i}, skipping visualization.")
-                    continue
-                self._plot_profile_area(px, pz, index=i, ransac_line=rl, save_vis=save_vis)
-                plt.pause(0.1)
-                plt.close()
-        plt.pause(0.1)
+        #todo: delete this once confirmed working
+        # if visualize:
+        #     for i in range(len(toolpath_points)):
+        #         px = profile_xs[i]
+        #         pz = profile_zs[i]
+        #         rl = ransac_lines[i]
+        #         if px is None or pz is None:
+        #             print(f"No profile found for toolpath index {i}, skipping visualization.")
+        #             continue
+        #         self._plot_profile_area(px, pz, index=i, ransac_line=rl, save_vis=save_vis)
+        #         plt.pause(0.1)
+        #         plt.close()
+        # plt.pause(0.1)
 
         return profile_xs, profile_zs, ransac_lines, areas
 
@@ -643,19 +727,31 @@ class BeadScan:
 if __name__ == "__main__":
 
     folderpath = 'data'
-    filename = 'Silicone bead data.csv'
+    # filename = 'scan_test_2.csv'
+    # filename = 'two_rods.csv'
+    filename = 'ausmor.csv'
     toolname = 'bead_toolpath.csv'
+    # toolname = 'scan_test_2_toolpath.csv'
+    # scan_speed = 11.1  # mm/s
     scan_speed = 10.0  # mm/s
 
-    beadscan = BeadScan(folderpath, filename, toolname, scan_speed, slice_thickness_override=0.05)
-    Z_rs, R_rs = beadscan.flatten_ransac(visualize=False, save_vis=False)
-    toolpath_aligned, toolpath_transform = beadscan.register_toolpath_to_scan(visualize=False, save_vis=False)
+    visualize = True
+    save_vis = False
+    verbose_prints = True
 
-    scan_points = beadscan.points_flattened
-    profile_xs, profile_zs, ground_lines, areas = beadscan.get_all_profile_areas(toolpath_aligned, scan_points,
-                                                                   visualize=False, save_vis=False)
+    #todo: take some care to distinguish between scan speed and print speed
+    #
 
-    flowrates, volumes = beadscan.get_flowrates(areas, visualize=False, save_vis=False)
+    beadscan = BeadScan(folderpath, filename, toolname, scan_speed, slice_thickness_override=0.05, verbose_prints=verbose_prints)
+    Z_rs, R_rs = beadscan.flatten_ransac(visualize=visualize, save_vis=save_vis)
+    toolpath_aligned, toolpath_transform = beadscan.register_toolpath_to_scan(visualize=visualize, save_vis=save_vis)
 
-    # profile_x, profile_z, ransac_line, area = beadscan.extract_profile(toolpath_aligned, scan_points,
-    #                                                 index=123, width=0.0, visualize=False, save_vis=False)
+    scan_points = beadscan.points_flattened[beadscan.valid_mask]  # Use only valid points from flattened scan
+
+    # profile_xs, profile_zs, ground_lines, areas = beadscan.get_all_profile_areas(toolpath_aligned, scan_points,
+    #                                                                visualize=visualize, save_vis=save_vis)
+
+    # flowrates, volumes = beadscan.get_flowrates(areas, visualize=visualize, save_vis=save_vis)
+
+    profile_x, profile_z, ransac_line, area = beadscan.extract_profile(toolpath_aligned, scan_points,
+                                                    index=1330, width=0.0, visualize=visualize, save_vis=save_vis)
