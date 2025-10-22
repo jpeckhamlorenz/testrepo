@@ -1,0 +1,17 @@
+;TIME_ELAPSED:46671.456190
+M107 P1
+M140 S0
+T6; Change to tool 6
+G92 E0; Zero Extruder
+G1 E-12 F400;
+G91; change to relative mode
+G1 Z5 F200;
+G90 ; switch back to absolute mode
+G1 X-40 Y100 F7200;
+G1 Z150 F200;
+M140 S0; turn off be
+M104 S0; turn off extruder
+M107; turn off fan
+M82 ;absolute extrusion mode
+;End of Gcode
+;Gcode End

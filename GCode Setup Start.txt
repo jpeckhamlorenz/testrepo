@@ -1,0 +1,76 @@
+;FLAVOR:Marlin
+;TIME:46671
+;Filament used: 49.8252m, 0m
+;Layer height: 0.2
+;MINX:5.173
+;MINY:12.272
+;MINZ:0.2
+;MAXX:277.915
+;MAXY:176.679
+;MAXZ:6
+;TARGET_MACHINE.NAME:Unknown
+;Generated with Cura_SteamEngine 5.7.1
+T5
+M104 S170
+M105
+M82 ;absolute extrusion mode
+M205 X6 Y6; set x and y jerk
+M106 S120 ; set fan to 50
+M104 S170 ; extruder to 170 c
+M82 ;absolute extrusion mode
+G21 ;metric values
+G90 ;absolute positioning
+M82 ;set extruder to absolute mode
+G28 ;home all axis
+M109
+G1 X-50 Y100 Z10 F7200;
+M163 S0 P0.5; set mix ratio for motor 1 to 50
+M163 S1 P0.5; set mix ratio for motor 2 to 50
+M163 S2 P0;No plastic
+M164 S5; set mixing ratio of silicone print head tool 5
+M163 S0 P0.5; set mix ratio for motor 1 to 50
+M163 S1 P0.5; set mix ratio for motor 2 to 50
+M163 S2 P0;No plastic
+M164 S6; set mixing ratio of silicone print head tool 6
+M163 S0 P0; set mix ratio for motor 1 to 0
+M163 S1 P0; set mix ratio for motor 2 to 0
+M163 S2 P1;plastic
+M164 S4; set mixing ratio of plastic print head tool 4
+T4; Set tool to plastic head
+G1 X5 Y5 F7200;
+G1 Z0.3 F100;
+G92 E0; Zero Extruder
+G1 X70 E25 F300;
+G92 E0; zero exturder
+G1 E-0.1 F100;
+G92 E0; zero extruder
+G1 X80 E0 F7200;
+G92 E0;
+G1 Z30 E0 F200;
+G1 X-10 Y100 E0 F7200;
+G1 Z1 F200;
+G92 E0
+;////////// Starting silicone //////////
+;TYPE:SILICONE-START
+G90 ; switch back to absolute mode
+G1 X-77 Y45;
+T6; Purge silicone tool head
+G92 E0 ;Zero extuder
+G1 E130 F350;
+G92 E0; zero extuder
+G1 E-1 F2000;
+G1 X-82 Y85 E-1 F1000;
+G1 X-80 Y135 E-1;
+G1 X-76 Y129 E-1;
+G1 X-76 Y99 E-1;
+G1 X-64 Y99 E-1;
+G92 E0; zero extuder
+T5; change to normal printing tool head
+G90 ; switch back to absolute mode
+;////////// Starting silicone //////////
+G92 E0
+;LAYER_COUNT:30
+;LAYER:0
+M106 S127.5 P1
+;MESH:Full_Insole_Leo_Design3_Waves_Faster.STL
+;TYPE:FILL
